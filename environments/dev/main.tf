@@ -39,8 +39,8 @@ module "network" {
   address_prefixes = var.address_prefixes
 }
 
-module "compute" {
-  source              = "../../modules/compute"
+module "backend_vmss" {
+  source              = "../../modules/backend-vmss"
   resource_group_name = data.azurerm_resource_group.main.name
   location            = data.azurerm_resource_group.main.location
   size                = var.size

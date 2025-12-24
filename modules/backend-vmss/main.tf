@@ -1,11 +1,10 @@
-resource "azurerm_linux_virtual_machine" "main" {
-  name                = "vm-${var.project_name}-${var.environment}"
-  admin_username      = "adminuser"
+resource "azurerm_linux_virtual_machine_scale_set" "backend" {
+  name                = "vmss-${var.project_name}-backend-${var.environment}"
   resource_group_name = var.resource_group_name
   location            = var.location
-  size                = var.size
-
-  network_interface_ids = var.network_interface_ids
+  sku                 = "Standard_B1ms"
+  instances           = 2
+  admin_username      = "adminuser"
 
   admin_ssh_key {
     username   = "adminuser"
@@ -22,6 +21,17 @@ resource "azurerm_linux_virtual_machine" "main" {
     offer     = "0001-com-ubuntu-server-jammy"
     sku       = "22_04-lts"
     version   = "latest"
+  }
+
+  network_interface {
+    name    = "backend-nic"
+    primary = true
+
+    ip_configuration {
+      name      = "internal"
+      primary   = true
+      subnet_id = var.subnet_id
+    }
   }
 
   tags = {
