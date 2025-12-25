@@ -1,0 +1,15 @@
+#cloud-config
+write_files:
+  - path: /etc/envoy/envoy.yaml
+    content: |
+      # COPY PASTE semua isi envoy.yml di sini
+      # Tapi di-indent 6 spasi
+
+packages:
+  - docker.io
+
+runcmd:
+  - systemctl start docker
+  - systemctl enable docker
+  - mkdir -p /etc/envoy
+  - docker run -d --name envoy --network host -v /etc/envoy:/etc/envoy envoyproxy/envoy:v1.31-latest

@@ -24,7 +24,7 @@ resource "azurerm_linux_virtual_machine" "envoy-lb" {
     version   = "latest"
   }
 
-  custom_data = base64decode(file("${path.module}/config/envoy.yml"))
+  custom_data = base64decode(file("${path.module}/cloud-init.yml"))
 
   tags = {
     environment = var.environment

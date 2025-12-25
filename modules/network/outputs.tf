@@ -4,8 +4,12 @@ output "subnet_id" {
 }
 
 # Public IP
-output "public_ip" {
-  value = azurerm_public_ip.pip.ip_address
+output "envoy_public_ip" {
+  value = azurerm_public_ip.envoy_pip.ip_address
+}
+
+output "monitor_public_ip" {
+  value = azurerm_public_ip.monitor_pip.ip_address
 }
 
 # Virtual Network (VNet)
