@@ -37,6 +37,7 @@ module "network" {
   environment      = var.environment
   address_space    = var.address_space
   address_prefixes = var.address_prefixes
+  dns_record       = module.backend-vmss.dns_record
 }
 
 module "backend-vmss" {
