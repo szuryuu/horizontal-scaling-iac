@@ -22,8 +22,8 @@ data "azurerm_key_vault" "main" {
   resource_group_name = data.azurerm_resource_group.main.name
 }
 
-data "azurerm_key_vault_secret" "main" {
-  name         = "ssh-${var.environment}-${var.project_name}"
+data "azurerm_key_vault_secret" "ssh" {
+  name         = "ssh-public-keys"
   key_vault_id = data.azurerm_key_vault.main.id
 }
 
@@ -37,7 +37,7 @@ module "network" {
   environment      = var.environment
   address_space    = var.address_space
   address_prefixes = var.address_prefixes
-  dns_record       = module.backend-vmss.dns_record
+  # dns_record       = module.backend-vmss.dns_record
 }
 
 module "backend-vmss" {
@@ -48,7 +48,7 @@ module "backend-vmss" {
   # Configuration
   project_name   = var.project_name
   environment    = var.environment
-  ssh_public_key = data.azurerm_key_vault_secret.main.value
+  ssh_public_key = data.azurerm_key_vault_secret.ssh.value
   subnet_id      = module.network.subnet_id
 
   depends_on = [module.network]
@@ -64,7 +64,7 @@ module "envoy-lb" {
   project_name          = var.project_name
   environment           = var.environment
   network_interface_ids = [module.network.envoy_nic_id]
-  ssh_public_key        = data.azurerm_key_vault_secret.main.value
+  ssh_public_key        = data.azurerm_key_vault_secret.ssh.value
 
   depends_on = [module.network]
 }
