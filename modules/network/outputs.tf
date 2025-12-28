@@ -3,13 +3,17 @@ output "subnet_id" {
   value = azurerm_subnet.subnet.id
 }
 
-# Public IP
+# IP
 output "envoy_public_ip" {
   value = azurerm_public_ip.envoy_pip.ip_address
 }
 
 output "monitor_public_ip" {
   value = azurerm_public_ip.monitor_pip.ip_address
+}
+
+output "control_plane_private_ip" {
+  value = azurerm_network_interface.control_plane_nic.private_ip_address
 }
 
 # Virtual Network (VNet)
@@ -24,6 +28,10 @@ output "envoy_nic_id" {
 
 output "monitor_nic_id" {
   value = azurerm_network_interface.monitor_nic.id
+}
+
+output "control_plane_nic_id" {
+  value = azurerm_network_interface.control_plane_nic.id
 }
 
 # Load Balancer

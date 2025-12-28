@@ -1,5 +1,5 @@
-resource "azurerm_linux_virtual_machine" "envoy-lb" {
-  name                = "${var.project_name}-${var.environment}-envoy-lb"
+resource "azurerm_linux_virtual_machine" "control_plane" {
+  name                = "${var.project_name}-${var.environment}-control-plane"
   resource_group_name = var.resource_group_name
   location            = var.location
   size                = var.size
@@ -26,7 +26,9 @@ resource "azurerm_linux_virtual_machine" "envoy-lb" {
   }
 
   custom_data = base64encode(templatefile("${path.module}/cloud-init.yml", {
-    control_plane_host = var.control_plane_host
+    subscription_id     = var.subscription_id
+    resource_group_name = var.resource_group_name
+    vmss_name           = var.vmss_name
   }))
 
   tags = {

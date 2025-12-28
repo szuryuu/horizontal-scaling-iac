@@ -1,0 +1,301 @@
+#cloud-config
+write_files:
+  - path: /opt/control-plane/main.go
+    content: |
+      package main
+
+      import (
+          "context"
+          "fmt"
+          "log"
+          "net"
+          "time"
+
+          "github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+          "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+          cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
+          core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+          endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+          listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+          route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
+          hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
+          "github.com/envoyproxy/go-control-plane/pkg/cache/types"
+          "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
+          "github.com/envoyproxy/go-control-plane/pkg/resource/v3"
+          "github.com/envoyproxy/go-control-plane/pkg/server/v3"
+          "google.golang.org/grpc"
+          "google.golang.org/grpc/keepalive"
+          "google.golang.org/protobuf/types/known/anypb"
+          "google.golang.org/protobuf/types/known/durationpb"
+      )
+
+      const (
+          grpcPort       = 18000
+          subscriptionID = "${subscription_id}"
+          resourceGroup  = "${resource_group_name}"
+          vmssName       = "${vmss_name}"
+          pollingInterval = 30 * time.Second
+      )
+
+      type AzureDiscovery struct {
+          client *armcompute.VirtualMachineScaleSetsClient
+          ctx    context.Context
+      }
+
+      func NewAzureDiscovery(ctx context.Context) (*AzureDiscovery, error) {
+          cred, err := azidentity.NewDefaultAzureCredential(nil)
+          if err != nil {
+              return nil, fmt.Errorf("failed to get credentials: %v", err)
+          }
+
+          client, err := armcompute.NewVirtualMachineScaleSetsClient(subscriptionID, cred, nil)
+          if err != nil {
+              return nil, fmt.Errorf("failed to create VMSS client: %v", err)
+          }
+
+          return &AzureDiscovery{
+              client: client,
+              ctx:    ctx,
+          }, nil
+      }
+
+      func (a *AzureDiscovery) GetVMSSInstances() ([]string, error) {
+          pager := a.client.NewListInstancesAllPager(resourceGroup, vmssName, nil)
+          var ips []string
+
+          for pager.More() {
+              page, err := pager.NextPage(a.ctx)
+              if err != nil {
+                  return nil, fmt.Errorf("failed to get instances: %v", err)
+              }
+
+              for _, vm := range page.Value {
+                  if vm.Properties == nil || vm.Properties.NetworkProfile == nil {
+                      continue
+                  }
+
+                  for _, nic := range vm.Properties.NetworkProfile.NetworkInterfaces {
+                      if nic.Properties == nil {
+                          continue
+                      }
+                      for _, ipConfig := range nic.Properties.IPConfigurations {
+                          if ipConfig.Properties != nil && ipConfig.Properties.PrivateIPAddress != nil {
+                              ips = append(ips, *ipConfig.Properties.PrivateIPAddress)
+                          }
+                      }
+                  }
+              }
+          }
+
+          return ips, nil
+      }
+
+      func makeCluster(clusterName string) *cluster.Cluster {
+          return &cluster.Cluster{
+              Name:                 clusterName,
+              ConnectTimeout:       durationpb.New(5 * time.Second),
+              ClusterDiscoveryType: &cluster.Cluster_Type{Type: cluster.Cluster_EDS},
+              EdsClusterConfig: &cluster.Cluster_EdsClusterConfig{
+                  EdsConfig: &core.ConfigSource{
+                      ResourceApiVersion: core.ApiVersion_V3,
+                      ConfigSourceSpecifier: &core.ConfigSource_Ads{
+                          Ads: &core.AggregatedConfigSource{},
+                      },
+                  },
+              },
+          }
+      }
+
+      func makeEndpoint(clusterName string, ips []string) *endpoint.ClusterLoadAssignment {
+          var endpoints []*endpoint.LbEndpoint
+
+          for _, ip := range ips {
+              endpoints = append(endpoints, &endpoint.LbEndpoint{
+                  HostIdentifier: &endpoint.LbEndpoint_Endpoint{
+                      Endpoint: &endpoint.Endpoint{
+                          Address: &core.Address{
+                              Address: &core.Address_SocketAddress{
+                                  SocketAddress: &core.SocketAddress{
+                                      Protocol: core.SocketAddress_TCP,
+                                      Address:  ip,
+                                      PortSpecifier: &core.SocketAddress_PortValue{
+                                          PortValue: 8080,
+                                      },
+                                  },
+                              },
+                          },
+                      },
+                  },
+              })
+          }
+
+          return &endpoint.ClusterLoadAssignment{
+              ClusterName: clusterName,
+              Endpoints: []*endpoint.LocalityLbEndpoints{{
+                  LbEndpoints: endpoints,
+              }},
+          }
+      }
+
+      func makeRoute(routeName, clusterName string) *route.RouteConfiguration {
+          return &route.RouteConfiguration{
+              Name: routeName,
+              VirtualHosts: []*route.VirtualHost{{
+                  Name:    "backend",
+                  Domains: []string{"*"},
+                  Routes: []*route.Route{{
+                      Match: &route.RouteMatch{
+                          PathSpecifier: &route.RouteMatch_Prefix{
+                              Prefix: "/",
+                          },
+                      },
+                      Action: &route.Route_Route{
+                          Route: &route.RouteAction{
+                              ClusterSpecifier: &route.RouteAction_Cluster{
+                                  Cluster: clusterName,
+                              },
+                          },
+                      },
+                  }},
+              }},
+          }
+      }
+
+      func makeHTTPListener(listenerName, routeName string) *listener.Listener {
+          manager := &hcm.HttpConnectionManager{
+              StatPrefix: "ingress_http",
+              RouteSpecifier: &hcm.HttpConnectionManager_Rds{
+                  Rds: &hcm.Rds{
+                      RouteConfigName: routeName,
+                      ConfigSource: &core.ConfigSource{
+                          ResourceApiVersion: core.ApiVersion_V3,
+                          ConfigSourceSpecifier: &core.ConfigSource_Ads{
+                              Ads: &core.AggregatedConfigSource{},
+                          },
+                      },
+                  },
+              },
+              HttpFilters: []*hcm.HttpFilter{{
+                  Name: "envoy.filters.http.router",
+              }},
+          }
+
+          pbst, err := anypb.New(manager)
+          if err != nil {
+              panic(err)
+          }
+
+          return &listener.Listener{
+              Name: listenerName,
+              Address: &core.Address{
+                  Address: &core.Address_SocketAddress{
+                      SocketAddress: &core.SocketAddress{
+                          Protocol: core.SocketAddress_TCP,
+                          Address:  "0.0.0.0",
+                          PortSpecifier: &core.SocketAddress_PortValue{
+                              PortValue: 8080,
+                          },
+                      },
+                  },
+              },
+              FilterChains: []*listener.FilterChain{{
+                  Filters: []*listener.Filter{{
+                      Name: "envoy.filters.network.http_connection_manager",
+                      ConfigType: &listener.Filter_TypedConfig{
+                          TypedConfig: pbst,
+                      },
+                  }},
+              }},
+          }
+      }
+
+      func generateSnapshot(version string, ips []string) *cache.Snapshot {
+          snap, _ := cache.NewSnapshot(
+              version,
+              map[resource.Type][]types.Resource{
+                  resource.ClusterType:  {makeCluster("backend_cluster")},
+                  resource.RouteType:    {makeRoute("local_route", "backend_cluster")},
+                  resource.ListenerType: {makeHTTPListener("listener_0", "local_route")},
+                  resource.EndpointType: {makeEndpoint("backend_cluster", ips)},
+              },
+          )
+          return snap
+      }
+
+      func main() {
+          ctx := context.Background()
+
+          discovery, err := NewAzureDiscovery(ctx)
+          if err != nil {
+              log.Fatalf("Failed to create Azure discovery: %v", err)
+          }
+
+          snapshotCache := cache.NewSnapshotCache(false, cache.IDHash{}, nil)
+          srv := server.NewServer(ctx, snapshotCache, nil)
+
+          go func() {
+              version := 1
+              for {
+                  ips, err := discovery.GetVMSSInstances()
+                  if err != nil {
+                      log.Printf("Error getting VMSS instances: %v", err)
+                      time.Sleep(pollingInterval)
+                      continue
+                  }
+
+                  log.Printf("Discovered %d instances: %v", len(ips), ips)
+
+                  snapshot := generateSnapshot(fmt.Sprintf("%d", version), ips)
+                  if err := snapshotCache.SetSnapshot(ctx, "envoy-node-1", snapshot); err != nil {
+                      log.Printf("Error setting snapshot: %v", err)
+                  } else {
+                      log.Printf("Updated snapshot version %d", version)
+                  }
+
+                  version++
+                  time.Sleep(pollingInterval)
+              }
+          }()
+
+          grpcServer := grpc.NewServer(
+              grpc.KeepaliveParams(keepalive.ServerParameters{
+                  Time:    30 * time.Second,
+                  Timeout: 5 * time.Second,
+              }),
+          )
+
+          server.RegisterServer(grpcServer, srv)
+
+          lis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
+          if err != nil {
+              log.Fatalf("Failed to listen: %v", err)
+          }
+
+          log.Printf("Control plane listening on :%d", grpcPort)
+          if err := grpcServer.Serve(lis); err != nil {
+              log.Fatalf("Failed to serve: %v", err)
+          }
+      }
+
+  - path: /opt/control-plane/go.mod
+    content: |
+      module control-plane
+
+      go 1.21
+
+      require (
+          github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.5.1
+          github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5 v5.4.0
+          github.com/envoyproxy/go-control-plane v0.12.0
+          google.golang.org/grpc v1.60.1
+          google.golang.org/protobuf v1.32.0
+      )
+
+packages:
+  - golang-go
+
+runcmd:
+  - cd /opt/control-plane
+  - go mod download
+  - go build -o control-plane main.go
+  - nohup ./control-plane > /var/log/control-plane.log 2>&1 &

@@ -15,6 +15,14 @@ output "vm_envoy_lb_private_ip" {
 #   value = module.monitoring.private_ip
 # }
 
+output "vm_control_plane_public_ip" {
+  value = module.control-plane.public_ip
+}
+
+output "vm_control_plane_private_ip" {
+  value = module.control-plane.private_ip
+}
+
 # Network
 output "envoy_nic_id" {
   value = module.network.envoy_nic_id

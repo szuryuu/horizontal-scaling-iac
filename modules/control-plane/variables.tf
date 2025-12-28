@@ -28,6 +28,10 @@ variable "ssh_public_key" {
   default = ""
 }
 
-variable "control_plane_host" {
+variable "subscription_id" {
+  type = string
+}
+
+variable "vmss_name" {
   type = string
 }
