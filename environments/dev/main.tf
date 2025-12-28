@@ -58,6 +58,7 @@ module "backend-vmss" {
 module "control-plane" {
   source              = "../../modules/control-plane"
   resource_group_name = data.azurerm_resource_group.main.name
+  resource_group_id   = data.azurerm_resource_group.main.id
   location            = data.azurerm_resource_group.main.location
   size                = var.size
 

@@ -31,6 +31,10 @@ resource "azurerm_linux_virtual_machine" "control_plane" {
     vmss_name           = var.vmss_name
   }))
 
+  identity {
+    type = "SystemAssigned"
+  }
+
   tags = {
     environment = var.environment
     project     = var.project_name
