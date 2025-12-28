@@ -20,7 +20,7 @@ resource "azurerm_lb_backend_address_pool" "backend_pool" {
 resource "azurerm_lb_probe" "http_probe" {
   loadbalancer_id = azurerm_lb.backend_lb.id
   name            = "HTTPProbe"
-  protocol        = "tcp"
+  protocol        = "Http"
   port            = 8080
   request_path    = "/"
 }
@@ -28,7 +28,7 @@ resource "azurerm_lb_probe" "http_probe" {
 resource "azurerm_lb_rule" "lb_rule" {
   loadbalancer_id                = azurerm_lb.backend_lb.id
   name                           = "LBRule"
-  protocol                       = "tcp"
+  protocol                       = "Tcp"
   frontend_port                  = 8080
   backend_port                   = 8080
   frontend_ip_configuration_name = "InternalFrontend"
