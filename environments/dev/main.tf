@@ -46,10 +46,11 @@ module "backend-vmss" {
   location            = data.azurerm_resource_group.main.location
 
   # Configuration
-  project_name   = var.project_name
-  environment    = var.environment
-  ssh_public_key = data.azurerm_key_vault_secret.ssh.value
-  subnet_id      = module.network.subnet_id
+  project_name       = var.project_name
+  environment        = var.environment
+  ssh_public_key     = data.azurerm_key_vault_secret.ssh.value
+  subnet_id          = module.network.subnet_id
+  lb_backend_pool_id = module.network.backend_pool_id
 
   depends_on = [module.network]
 }

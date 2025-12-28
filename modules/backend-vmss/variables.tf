@@ -27,3 +27,7 @@ variable "subnet_id" {
   type    = string
   default = ""
 }
+
+variable "lb_backend_pool_id" {
+  type = string
+}

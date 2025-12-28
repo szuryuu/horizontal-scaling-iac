@@ -25,3 +25,12 @@ output "envoy_nic_id" {
 output "monitor_nic_id" {
   value = azurerm_network_interface.monitor_nic.id
 }
+
+# Load Balancer
+# output "load_balancer_id" {
+#   value = azurerm_lb.load_balancer.id
+# }
+
+output "backend_pool_id" {
+  value = azurerm_lb_backend_address_pool.backend_pool.id
+}
