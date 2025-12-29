@@ -7,22 +7,18 @@ write_files:
         id: envoy-node-1
 
       dynamic_resources:
+        ads_config:
+          api_type: GRPC
+          transport_api_version: V3
+          grpc_services:
+          - envoy_grpc:
+              cluster_name: xds_cluster
         cds_config:
           resource_api_version: V3
-          api_config_source:
-            api_type: GRPC
-            transport_api_version: V3
-            grpc_services:
-            - envoy_grpc:
-                cluster_name: xds_cluster
+          ads: {}
         lds_config:
           resource_api_version: V3
-          api_config_source:
-            api_type: GRPC
-            transport_api_version: V3
-            grpc_services:
-            - envoy_grpc:
-                cluster_name: xds_cluster
+          ads: {}
 
       static_resources:
         clusters:
@@ -38,7 +34,11 @@ write_files:
                     socket_address:
                       address: ${control_plane_host}
                       port_value: 18000
-          http2_protocol_options: {}
+          typed_extension_protocol_options:
+            envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+              "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+              explicit_http_config:
+                http2_protocol_options: {}
 
       admin:
         address:
