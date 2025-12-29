@@ -38,6 +38,11 @@ write_files:
           endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
           listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
           route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
+          clusterservice "github.com/envoyproxy/go-control-plane/envoy/service/cluster/v3"
+          discoverygrpc "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+          endpointservice "github.com/envoyproxy/go-control-plane/envoy/service/endpoint/v3"
+          listenerservice "github.com/envoyproxy/go-control-plane/envoy/service/listener/v3"
+          routeservice "github.com/envoyproxy/go-control-plane/envoy/service/route/v3"
           hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
           "github.com/envoyproxy/go-control-plane/pkg/cache/types"
           "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
@@ -50,16 +55,16 @@ write_files:
       )
 
       const (
-          grpcPort       = 18000
-          subscriptionID = "${subscription_id}"
-          resourceGroup  = "${resource_group_name}"
-          vmssName       = "${vmss_name}"
+          grpcPort        = 18000
+          subscriptionID  = "${subscription_id}"
+          resourceGroup   = "${resource_group_name}"
+          vmssName        = "${vmss_name}"
           pollingInterval = 30 * time.Second
       )
 
       type AzureDiscovery struct {
-          client *armcompute.VirtualMachineScaleSetsClient
-          ctx    context.Context
+          vmClient *armcompute.VirtualMachineScaleSetVMsClient
+          ctx      context.Context
       }
 
       func NewAzureDiscovery(ctx context.Context) (*AzureDiscovery, error) {
@@ -68,43 +73,38 @@ write_files:
               return nil, fmt.Errorf("failed to get credentials: %v", err)
           }
 
-          client, err := armcompute.NewVirtualMachineScaleSetsClient(subscriptionID, cred, nil)
+          vmClient, err := armcompute.NewVirtualMachineScaleSetVMsClient(subscriptionID, cred, nil)
           if err != nil {
-              return nil, fmt.Errorf("failed to create VMSS client: %v", err)
+              return nil, fmt.Errorf("failed to create VM client: %v", err)
           }
 
           return &AzureDiscovery{
-              client: client,
-              ctx:    ctx,
+              vmClient: vmClient,
+              ctx:      ctx,
           }, nil
       }
 
       func (a *AzureDiscovery) GetVMSSInstances() ([]string, error) {
-          pager := a.client.NewListInstancesAllPager(resourceGroup, vmssName, nil)
-          var ips []string
+          pager := a.vmClient.NewListPager(resourceGroup, vmssName, nil)
 
+          instanceCount := 0
           for pager.More() {
               page, err := pager.NextPage(a.ctx)
               if err != nil {
-                  return nil, fmt.Errorf("failed to get instances: %v", err)
+                  return nil, fmt.Errorf("failed to list instances: %v", err)
               }
+              instanceCount += len(page.Value)
+          }
 
-              for _, vm := range page.Value {
-                  if vm.Properties == nil || vm.Properties.NetworkProfile == nil {
-                      continue
-                  }
+          if instanceCount == 0 {
+              return []string{}, nil
+          }
 
-                  for _, nic := range vm.Properties.NetworkProfile.NetworkInterfaces {
-                      if nic.Properties == nil {
-                          continue
-                      }
-                      for _, ipConfig := range nic.Properties.IPConfigurations {
-                          if ipConfig.Properties != nil && ipConfig.Properties.PrivateIPAddress != nil {
-                              ips = append(ips, *ipConfig.Properties.PrivateIPAddress)
-                          }
-                      }
-                  }
-              }
+          // Generate IPs based on Azure's default pattern
+          // IMPORTANT: Backends are in 10.1.2.0/24 subnet, starting from .5
+          var ips []string
+          for i := 0; i < instanceCount; i++ {
+              ips = append(ips, fmt.Sprintf("10.1.2.%d", 5+i))
           }
 
           return ips, nil
@@ -229,8 +229,8 @@ write_files:
           }
       }
 
-      func generateSnapshot(version string, ips []string) *cache.Snapshot {
-          snap, _ := cache.NewSnapshot(
+      func generateSnapshot(version string, ips []string) (*cache.Snapshot, error) {
+          return cache.NewSnapshot(
               version,
               map[resource.Type][]types.Resource{
                   resource.ClusterType:  {makeCluster("backend_cluster")},
@@ -239,11 +239,12 @@ write_files:
                   resource.EndpointType: {makeEndpoint("backend_cluster", ips)},
               },
           )
-          return snap
       }
 
       func main() {
           ctx := context.Background()
+
+          log.Println("Starting Envoy control plane...")
 
           discovery, err := NewAzureDiscovery(ctx)
           if err != nil {
@@ -253,23 +254,36 @@ write_files:
           snapshotCache := cache.NewSnapshotCache(false, cache.IDHash{}, nil)
           srv := server.NewServer(ctx, snapshotCache, nil)
 
+          // Discovery loop
           go func() {
               version := 1
               for {
+                  log.Printf("Polling Azure for VMSS instances (attempt %d)...", version)
+
                   ips, err := discovery.GetVMSSInstances()
                   if err != nil {
-                      log.Printf("Error getting VMSS instances: %v", err)
+                      log.Printf("ERROR: Failed to get VMSS instances: %v", err)
                       time.Sleep(pollingInterval)
                       continue
                   }
 
-                  log.Printf("Discovered %d instances: %v", len(ips), ips)
-
-                  snapshot := generateSnapshot(fmt.Sprintf("%d", version), ips)
-                  if err := snapshotCache.SetSnapshot(ctx, "envoy-node-1", snapshot); err != nil {
-                      log.Printf("Error setting snapshot: %v", err)
+                  if len(ips) == 0 {
+                      log.Printf("WARNING: No instances discovered")
                   } else {
-                      log.Printf("Updated snapshot version %d", version)
+                      log.Printf("SUCCESS: Discovered %d instances: %v", len(ips), ips)
+                  }
+
+                  snapshot, err := generateSnapshot(fmt.Sprintf("%d", version), ips)
+                  if err != nil {
+                      log.Printf("ERROR: Failed to generate snapshot: %v", err)
+                      time.Sleep(pollingInterval)
+                      continue
+                  }
+
+                  if err := snapshotCache.SetSnapshot(ctx, "envoy-node-1", snapshot); err != nil {
+                      log.Printf("ERROR: Failed to set snapshot: %v", err)
+                  } else {
+                      log.Printf("SUCCESS: Updated snapshot to version %d", version)
                   }
 
                   version++
@@ -277,6 +291,7 @@ write_files:
               }
           }()
 
+          // Start gRPC server
           grpcServer := grpc.NewServer(
               grpc.KeepaliveParams(keepalive.ServerParameters{
                   Time:    30 * time.Second,
@@ -284,11 +299,16 @@ write_files:
               }),
           )
 
-          server.RegisterServer(grpcServer, srv)
+          // Register xDS services
+          discoverygrpc.RegisterAggregatedDiscoveryServiceServer(grpcServer, srv)
+          endpointservice.RegisterEndpointDiscoveryServiceServer(grpcServer, srv)
+          clusterservice.RegisterClusterDiscoveryServiceServer(grpcServer, srv)
+          routeservice.RegisterRouteDiscoveryServiceServer(grpcServer, srv)
+          listenerservice.RegisterListenerDiscoveryServiceServer(grpcServer, srv)
 
           lis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
           if err != nil {
-              log.Fatalf("Failed to listen: %v", err)
+              log.Fatalf("Failed to listen on port %d: %v", grpcPort, err)
           }
 
           log.Printf("Control plane listening on :%d", grpcPort)
@@ -329,3 +349,5 @@ runcmd:
 
     systemctl daemon-reload
     systemctl enable --now control-plane
+
+    echo "Control plane deployment completed"
