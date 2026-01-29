@@ -23,7 +23,9 @@ resource "azurerm_linux_virtual_machine_scale_set" "backend" {
     version   = "latest"
   }
 
-  custom_data = base64encode(file("${path.module}/cloud-init.yml"))
+  custom_data = base64encode(templatefile("${path.module}/cloud-init.yml", {
+    consul_server_ip = var.consul_server_ip
+  }))
 
   network_interface {
     name    = "backend-nic"

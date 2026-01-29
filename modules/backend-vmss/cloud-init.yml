@@ -3,6 +3,28 @@ package_update: true
 
 packages:
   - docker.io
+  - curl
+  - unzip
+
+write_files:
+  path: /etc/consul.d/client.hcl
+  content: |
+    data_dir = "/var/lib/consul"
+    retry_join = ["${consul_server_ip}"]
+    bind_addr = "{{ GetPrivateIp }}"
+
+  path: /etc/consul.d/web.json
+  content: |
+    {
+      "service": {
+        "name": "backend-service",
+        "port": "80",
+        "check": {
+          "http": "http://localhost:80"
+          "interval": "5s"
+        }
+      }
+    }
 
 runcmd:
   - systemctl enable docker
@@ -14,3 +36,7 @@ runcmd:
   - docker run -d -p 8080:80 --name backend nginx:alpine
   - |
     docker exec backend sh -c 'echo "<h1>Backend $(hostname)</h1>" > /usr/share/nginx/html/index.html'
+  - curl -fsSL https://releases.hashicorp.com/consul/1.18.0/consul_1.18.0_linux_amd64.zip -o consul.zip
+  - unzip consul.zip -d /usr/local/bin/
+  - consul agent -config-dir=/etc/consul.d/ -data-dir=/tmp/consul -daemon
+

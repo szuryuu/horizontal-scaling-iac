@@ -28,6 +28,6 @@ variable "ssh_public_key" {
   default = ""
 }
 
-variable "control_plane_host" {
+variable "control_plane_ip" {
   type = string
 }

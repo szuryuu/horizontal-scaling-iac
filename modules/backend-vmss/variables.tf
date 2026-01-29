@@ -31,3 +31,7 @@ variable "subnet_id" {
 variable "lb_backend_pool_id" {
   type = string
 }
+
+variable "consul_server_ip" {
+  type = string
+}

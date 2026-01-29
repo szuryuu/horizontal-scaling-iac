@@ -36,6 +36,3 @@ variable "subscription_id" {
   type = string
 }
 
-variable "vmss_name" {
-  type = string
-}

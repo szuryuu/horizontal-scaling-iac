@@ -26,7 +26,7 @@ resource "azurerm_linux_virtual_machine" "envoy-lb" {
   }
 
   custom_data = base64encode(templatefile("${path.module}/cloud-init.yml", {
-    control_plane_host = var.control_plane_host
+    control_plane_ip = var.control_plane_ip
   }))
 
   tags = {

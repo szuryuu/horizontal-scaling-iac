@@ -5,7 +5,7 @@ key_vault_name      = "rg-intern-devops"
 
 # Environment
 environment  = "dev"
-project_name = "horizontal-scale-envoyproxy"
+project_name = "auto-discover-vmss"
 size         = "Standard_B1s"
 
 # Network

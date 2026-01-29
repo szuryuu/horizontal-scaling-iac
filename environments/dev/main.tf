@@ -40,21 +40,6 @@ module "network" {
   # dns_record       = module.backend-vmss.dns_record
 }
 
-module "backend-vmss" {
-  source              = "../../modules/backend-vmss"
-  resource_group_name = data.azurerm_resource_group.main.name
-  location            = data.azurerm_resource_group.main.location
-
-  # Configuration
-  project_name       = var.project_name
-  environment        = var.environment
-  ssh_public_key     = data.azurerm_key_vault_secret.ssh.value
-  subnet_id          = module.network.subnet_id
-  lb_backend_pool_id = module.network.backend_pool_id
-
-  depends_on = [module.network]
-}
-
 module "control-plane" {
   source              = "../../modules/control-plane"
   resource_group_name = data.azurerm_resource_group.main.name
@@ -69,9 +54,24 @@ module "control-plane" {
   network_interface_ids = [module.network.control_plane_nic_id]
   ssh_public_key        = data.azurerm_key_vault_secret.ssh.value
   subscription_id       = var.subscription_id
-  vmss_name             = module.backend-vmss.vm_name
 
-  depends_on = [module.network, module.backend-vmss]
+  depends_on = [module.network]
+}
+
+module "backend-vmss" {
+  source              = "../../modules/backend-vmss"
+  resource_group_name = data.azurerm_resource_group.main.name
+  location            = data.azurerm_resource_group.main.location
+
+  # Configuration
+  project_name       = var.project_name
+  environment        = var.environment
+  ssh_public_key     = data.azurerm_key_vault_secret.ssh.value
+  subnet_id          = module.network.subnet_id
+  lb_backend_pool_id = module.network.backend_pool_id
+  consul_server_ip   = module.network.control_plane_private_ip
+
+  depends_on = [module.network, module.control-plane]
 }
 
 module "envoy-lb" {
@@ -85,7 +85,7 @@ module "envoy-lb" {
   environment           = var.environment
   network_interface_ids = [module.network.envoy_nic_id]
   ssh_public_key        = data.azurerm_key_vault_secret.ssh.value
-  control_plane_host    = module.network.control_plane_private_ip
+  control_plane_ip      = module.network.control_plane_private_ip
 
   depends_on = [module.network, module.control-plane]
 }
