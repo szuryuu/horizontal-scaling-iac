@@ -33,11 +33,15 @@ Implementing a scalable Service Mesh using Envoy Proxy and Consul to automatical
 
 ## How It Works
 
-1.  **Scale Out Event**: Azure Autoscale triggers a new VM instance creation in the Scale Set due to high load (CPU > 70%).
+1.  **Scale Out Event**  
+    Azure Autoscale triggers a new VM instance creation in the Scale Set due to high load (CPU > 70%).
 2.  **Self-Registration**: The *Consul Agent* on the new VM starts and registers the "backend-service" with the *Consul Server*.
-3.  **Discovery**: *Consul Template* on the Envoy node detects the new service entry in the Consul catalog.
-4.  **Reconfiguration**: *Consul Template* renders a new `envoy.yaml` with the new IP address and hot-reloads the Envoy process.
-5.  **Traffic Routing**: Traffic is immediately load-balanced to the new instance.
+3.  **Discovery**  
+    *Consul Template* on the Envoy node detects the new service entry in the Consul catalog.
+4.  **Reconfiguration**  
+    *Consul Template* renders a new `envoy.yaml` with the new IP address and hot-reloads the Envoy process.
+5.  **Traffic Routing**  
+    Traffic is immediately load-balanced to the new instance.
 
 ## License
 
