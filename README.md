@@ -6,11 +6,11 @@ Implementing a scalable Service Mesh using Envoy Proxy and Consul to automatical
 
 ## Features
 
--   **Consul Service Discovery** Utilizes HashiCorp Consul for decentralized service registration and health checking, ensuring that only healthy instances are available for traffic routing.
+-   **Consul Service Discovery**  Utilizes HashiCorp Consul for decentralized service registration and health checking, ensuring that only healthy instances are available for traffic routing.
 
--   **Dynamic Envoy Configuration (Consul Template)** Leverages `consul-template` to watch for service changes in the Consul catalog and automatically reloads Envoy's configuration in real-time without downtime.
+-   **Dynamic Envoy Configuration (Consul Template)**  Leverages `consul-template` to watch for service changes in the Consul catalog and automatically reloads Envoy's configuration in real-time without downtime.
 
--   **Automated Infrastructure Scaling** Integrated with Azure Monitor Autoscale to automatically scale backend VM instances in or out based on CPU utilization, while seamlessly registering new nodes to the mesh.
+-   **Automated Infrastructure Scaling**  Integrated with Azure Monitor Autoscale to automatically scale backend VM instances in or out based on CPU utilization, while seamlessly registering new nodes to the mesh.
 
 ## Infrastructure Architecture
 
