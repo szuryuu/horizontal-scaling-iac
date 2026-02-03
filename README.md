@@ -15,7 +15,7 @@ Implementing a scalable Service Mesh using Envoy Proxy and Consul to automatical
 -   **Automated Infrastructure Scaling**  
     Integrated with Azure Monitor Autoscale to automatically scale backend VM instances in or out based on CPU utilization, while seamlessly registering new nodes to the mesh.
 
-## Infrastructure Architecture
+## Infrastructure
 
 ### Compute Layer
 | Component | Type | Description |
